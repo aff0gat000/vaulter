@@ -1,0 +1,7 @@
+vaulter
+coverage.out
+coverage.html
+dist/
+.env
+*.exe
+.claude/
