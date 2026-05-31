@@ -69,8 +69,10 @@ assert_contains "$SEARCH_JSON" "\"password\"" "search did not match the password
 assert_contains "$SEARCH_JSON" "\"api_token\"" "search did not match the api_token key"
 assert_not_contains "$SEARCH_JSON" "S3cr3t-P@ss-9182" "search leaked masked value without --show-values"
 
-echo "==> Running: vaulter search --value with --show-values"
-SHOW_JSON="$("$VAULTER" search --key 'password' --show-values --json --mount secret --prefix apps/payments)"
+echo "==> Running: vaulter search --show-values"
+# Scan apps/ (a directory); apps/payments is a leaf secret, so listing under it
+# directly would return nothing.
+SHOW_JSON="$("$VAULTER" search --key 'password' --show-values --json --mount secret --prefix apps/)"
 assert_contains "$SHOW_JSON" "S3cr3t-P@ss-9182" "search --show-values did not reveal the value"
 
 echo ""
