@@ -64,7 +64,8 @@ vaulter audit --json
 | `--mount, -m` | `secret` | KV engine mount path |
 | `--kv-version` | `2` | KV engine version (1 or 2) |
 | `--prefix, -p` | `""` | Path prefix to search under |
-| `--json` | `false` | Output as JSON |
+| `--format` | `table` | Output format: `table`, `json`, `markdown`, `html` |
+| `--json` | `false` | Shorthand for `--format json` |
 | `--insecure` | `false` | Skip TLS verification |
 | `--timeout` | `30s` | Vault request timeout |
 | `--show-values` | `false` | Show secret values (masked by default) |
@@ -111,7 +112,19 @@ vaulter search --key "pass" --kv-version 1 --mount kv
 
 # Show actual values
 vaulter search --key "password" --show-values
+
+# Generate a shareable report (values stay masked unless --show-values)
+vaulter audit --format html > vault-audit.html
+vaulter audit --format markdown > vault-audit.md
 ```
+
+## Reports
+
+`--format markdown` and `--format html` render a self-contained report with a
+severity summary and a findings/matches table — handy as a CI artifact or for
+review by people who don't use the CLI. Findings are sorted with errors first,
+and values remain masked unless `--show-values` is passed. The HTML report
+escapes all values, so it is safe to open in a browser.
 
 ## Library Usage
 
@@ -150,6 +163,22 @@ func main() {
 ```
 
 `Audit` accepts custom rules: `c.Audit(ctx, prefix, myRule1, myRule2)`. Pass none to use `vaulter.DefaultRules()`.
+
+Results can be rendered to HTML or Markdown via `pkg/vaulter/report`:
+
+```go
+import "github.com/yb/vaulter/pkg/vaulter/report"
+
+findings, scanned, _ := c.Audit(context.Background(), "apps/")
+report.HTML(os.Stdout, report.Data{
+	Command:  "audit",
+	Mount:    "secret",
+	Prefix:   "apps/",
+	Scanned:  scanned,
+	Findings: findings,
+	Generated: time.Now(),
+})
+```
 
 ## GitHub Action
 

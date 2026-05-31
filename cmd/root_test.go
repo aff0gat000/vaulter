@@ -209,6 +209,78 @@ func TestAuditCmd_Integration(t *testing.T) {
 	}
 }
 
+func TestAuditCmd_MarkdownFormat(t *testing.T) {
+	srv := newMockVault()
+	defer srv.Close()
+	t.Setenv("VAULT_ADDR", srv.URL)
+	t.Setenv("VAULT_TOKEN", "test-token")
+
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"audit", "--insecure", "--format", "markdown"})
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := cmd.Execute()
+	w.Close()
+	os.Stdout = oldStdout
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(r)
+	out := buf.String()
+	if !strings.Contains(out, "# Vaulter audit report") {
+		t.Errorf("expected markdown report header, got: %s", out)
+	}
+	if !strings.Contains(out, "config-like-key") {
+		t.Errorf("expected config-like-key finding in markdown, got: %s", out)
+	}
+}
+
+func TestAuditCmd_HTMLFormat(t *testing.T) {
+	srv := newMockVault()
+	defer srv.Close()
+	t.Setenv("VAULT_ADDR", srv.URL)
+	t.Setenv("VAULT_TOKEN", "test-token")
+
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"audit", "--insecure", "--format", "html"})
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := cmd.Execute()
+	w.Close()
+	os.Stdout = oldStdout
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(r)
+	if !strings.Contains(buf.String(), "<!DOCTYPE html>") {
+		t.Errorf("expected HTML document, got: %s", buf.String())
+	}
+}
+
+func TestCmd_UnknownFormat(t *testing.T) {
+	srv := newMockVault()
+	defer srv.Close()
+	t.Setenv("VAULT_ADDR", srv.URL)
+	t.Setenv("VAULT_TOKEN", "test-token")
+
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"audit", "--insecure", "--format", "xml"})
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	if err := cmd.Execute(); err == nil {
+		t.Error("expected error for unknown --format")
+	}
+}
+
 func TestSearchCmd_NoResults(t *testing.T) {
 	srv := newMockVault()
 	defer srv.Close()

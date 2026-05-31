@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/yb/vaulter/pkg/vaulter"
+	"github.com/yb/vaulter/pkg/vaulter/report"
 )
 
 // Version is set at build time via ldflags.
@@ -24,6 +26,7 @@ type Config struct {
 	ValPattern string
 	Audit      bool
 	JSON       bool
+	Format     string
 	Insecure   bool
 	Timeout    time.Duration
 	ShowValues bool
@@ -48,7 +51,8 @@ Requires VAULT_ADDR and VAULT_TOKEN environment variables.`,
 	root.PersistentFlags().StringVarP(&cfg.Mount, "mount", "m", "secret", "KV engine mount path")
 	root.PersistentFlags().IntVar(&cfg.KVVersion, "kv-version", 2, "KV engine version (1 or 2)")
 	root.PersistentFlags().StringVarP(&cfg.Prefix, "prefix", "p", "", "Path prefix to search under")
-	root.PersistentFlags().BoolVar(&cfg.JSON, "json", false, "Output as JSON")
+	root.PersistentFlags().BoolVar(&cfg.JSON, "json", false, "Output as JSON (shorthand for --format json)")
+	root.PersistentFlags().StringVar(&cfg.Format, "format", "table", "Output format: table, json, markdown, html")
 	root.PersistentFlags().BoolVar(&cfg.Insecure, "insecure", false, "Skip TLS verification (not recommended)")
 	root.PersistentFlags().DurationVar(&cfg.Timeout, "timeout", 30*time.Second, "Vault request timeout")
 	root.PersistentFlags().BoolVar(&cfg.ShowValues, "show-values", false, "Show secret values (masked by default)")
@@ -119,7 +123,7 @@ func runSearch(cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	return report(cfg, matches, nil, count)
+	return emit(cfg, "search", matches, nil, count)
 }
 
 func runAudit(cfg *Config) error {
@@ -131,14 +135,50 @@ func runAudit(cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	return report(cfg, nil, findings, count)
+	return emit(cfg, "audit", nil, findings, count)
 }
 
-func report(cfg *Config, matches []vaulter.Match, findings []vaulter.Finding, secretCount int) error {
-	if cfg.JSON {
-		return outputJSON(matches, findings, secretCount)
+// effectiveFormat resolves --format / --json into a single format string.
+func effectiveFormat(cfg *Config) string {
+	format := strings.ToLower(strings.TrimSpace(cfg.Format))
+	if format == "" {
+		format = "table"
 	}
+	// --json is shorthand, honored only when --format was left at its default.
+	if cfg.JSON && format == "table" {
+		format = "json"
+	}
+	return format
+}
 
+func emit(cfg *Config, command string, matches []vaulter.Match, findings []vaulter.Finding, secretCount int) error {
+	switch effectiveFormat(cfg) {
+	case "json":
+		return outputJSON(matches, findings, secretCount)
+	case "markdown", "md":
+		return report.Markdown(os.Stdout, reportData(cfg, command, matches, findings, secretCount))
+	case "html":
+		return report.HTML(os.Stdout, reportData(cfg, command, matches, findings, secretCount))
+	case "table":
+		return printTable(matches, findings, secretCount)
+	default:
+		return fmt.Errorf("unknown --format %q (use table, json, markdown, or html)", cfg.Format)
+	}
+}
+
+func reportData(cfg *Config, command string, matches []vaulter.Match, findings []vaulter.Finding, secretCount int) report.Data {
+	return report.Data{
+		Command:   command,
+		Mount:     cfg.Mount,
+		Prefix:    cfg.Prefix,
+		Scanned:   secretCount,
+		Matches:   matches,
+		Findings:  findings,
+		Generated: time.Now(),
+	}
+}
+
+func printTable(matches []vaulter.Match, findings []vaulter.Finding, secretCount int) error {
 	if len(matches) > 0 {
 		printMatches(matches)
 	}
