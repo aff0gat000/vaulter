@@ -38,6 +38,25 @@ jobs:
       - name: Build
         run: go build -o vaulter .
 
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify module checksums
+        run: go mod verify
+      - name: Fail if go.mod/go.sum are not tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+      - name: Vulnerability scan (govulncheck)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
   docker:
     runs-on: ubuntu-latest
     steps:
