@@ -72,6 +72,21 @@ func TestDefaultRules(t *testing.T) {
 		{"placeholder-value", "", "k", "<change this>", true},
 		{"placeholder-value", "", "k", "real-secret-value", false},
 		{"placeholder-value", "", "k", "", false},
+		// Templating markers that survived un-rendered.
+		{"placeholder-value", "", "k", "${DB_PASSWORD}", true},
+		{"placeholder-value", "", "k", "{{ password }}", true},
+		{"placeholder-value", "", "k", "none", true},
+		{"placeholder-value", "", "k", "null", true},
+		{"placeholder-value", "", "k", "n/a", true},
+		{"placeholder-value", "", "k", "example", true},
+		// Regression: reserved example domains/emails must NOT be flagged just
+		// because they contain "example"/"default" as a substring.
+		{"placeholder-value", "", "k", "https://orders.example.com", false},
+		{"placeholder-value", "", "k", "ops@example.com", false},
+		{"placeholder-value", "", "k", "db.internal.example.com", false},
+		{"placeholder-value", "", "k", "example.org", false},
+		{"placeholder-value", "", "k", "default-vpc-1a2b3c", false},
+		{"placeholder-value", "", "k", "s3cret-passw0rd", false},
 
 		// large-value
 		{"large-value", "", "k", strings.Repeat("a", 10001), true},
@@ -130,6 +145,9 @@ func TestDefaultRules(t *testing.T) {
 		{"url-value", "", "k", "example.com", false},
 		{"url-value", "", "k", "s3cr3t", false},
 		{"url-value", "", "k", "", false},
+		// Credential-bearing URLs are secrets, not config — not flagged.
+		{"url-value", "", "k", "https://user:pass@host/path", false},
+		{"url-value", "", "k", "ftp://anon@files.example.com", false},
 
 		// file-path-value
 		{"file-path-value", "", "k", "/etc/passwd", true},
@@ -147,6 +165,9 @@ func TestDefaultRules(t *testing.T) {
 		{"email-value", "", "k", "not-an-email", false},
 		{"email-value", "", "k", "a@b", false},
 		{"email-value", "", "k", "", false},
+		// Must not misclassify credential-bearing URLs / connection strings.
+		{"email-value", "", "k", "https://user:pass@db.internal/app", false},
+		{"email-value", "", "k", "postgres://u:p@host:5432/db", false},
 
 		// Unicode edge cases
 		{"config-like-key", "", "host", "日本語", true},

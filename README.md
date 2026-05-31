@@ -112,11 +112,11 @@ responsible-use guidance.
 | `boolean-value` | warning | Values that are true/false/yes/no |
 | `numeric-only-value` | warning | Purely numeric values |
 | `ip-address-value` | warning | IPv4 addresses (optionally with a port) |
-| `url-value` | warning | http(s)/ftp URLs stored as values |
+| `url-value` | warning | Plain http(s)/ftp endpoint URLs (credential-bearing URLs are treated as secrets, not flagged) |
 | `file-path-value` | warning | Filesystem paths (`/etc/...`, `./...`, `C:\...`) |
 | `email-value` | warning | Email addresses |
 | `empty-value` | error | Empty or whitespace-only values |
-| `placeholder-value` | error | Values containing changeme, TODO, etc. |
+| `placeholder-value` | error | Whole-value placeholders (`changeme`, `none`, `n/a`) and un-rendered templating (`${...}`, `{{...}}`); reserved example domains are **not** flagged |
 | `large-value` | warning | Values over 10KB |
 | `json-blob` | warning | JSON objects or arrays stored as values |
 | `base64-config` | warning | Keys suggesting base64-encoded config |

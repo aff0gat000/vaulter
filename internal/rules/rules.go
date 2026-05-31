@@ -28,10 +28,14 @@ var (
 	ipv4Re = regexp.MustCompile(`^(\d{1,3}\.){3}\d{1,3}(:\d+)?$`)
 	// http(s)/ftp URL.
 	urlRe = regexp.MustCompile(`^(https?|ftp)://[^\s]+$`)
+	// A URL whose authority embeds credentials (userinfo@host) — such values
+	// carry secrets and must NOT be treated as non-secret config.
+	credentialURLRe = regexp.MustCompile(`^(https?|ftp)://[^/\s]*@`)
 	// Filesystem path: unix absolute (/x), relative (./ ../), or Windows drive (C:\).
 	filePathRe = regexp.MustCompile(`^(/[^/\s]|\./|\.\./|[A-Za-z]:\\)`)
-	// Email address.
-	emailRe = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
+	// Email address. Deliberately strict (RFC-ish local/domain charset) so it
+	// does not match credential-bearing URLs like "https://u:p@host/path".
+	emailRe = regexp.MustCompile(`^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$`)
 	// keyTokenSplit splits a key into tokens on _, -, ., and space.
 	keyTokenSplit = regexp.MustCompile(`[._\- ]+`)
 )
@@ -52,6 +56,28 @@ var configTokens = map[string]bool{
 	"scheme": true, "protocol": true, "cluster": true, "zone": true,
 	"datacenter": true, "interval": true, "ttl": true, "threshold": true,
 	"replicas": true,
+}
+
+// placeholderWholeValues are values that, taken in their entirety, indicate a
+// placeholder/unset secret. Matched after trimming and lower-casing so they do
+// NOT fire on legitimate values that merely contain the word (e.g. the value
+// "example" is a placeholder, but "example.com" is not).
+var placeholderWholeValues = map[string]bool{
+	"changeme": true, "change_me": true, "change-me": true, "changethis": true,
+	"todo": true, "tbd": true, "fixme": true, "placeholder": true,
+	"example": true, "default": true, "none": true, "null": true,
+	"n/a": true, "xxx": true, "xxxx": true,
+}
+
+// placeholderMarkers are unambiguous placeholder/templating fragments matched as
+// substrings, because they essentially never appear inside real secret values.
+// Domain/email forms such as "example.com" are intentionally excluded by
+// requiring a separator (e.g. "example_") rather than a bare "example".
+var placeholderMarkers = []string{
+	"changeme", "change me", "change_me", "change-me", "change this",
+	"replace_me", "replaceme", "replace with", "replace-with",
+	"your_", "your-", "insert_", "insert-", "example_", "example-",
+	"<change", "todo:", "fixme:", "${", "{{", "<%",
 }
 
 // DefaultRules returns built-in rules for detecting non-secret / config-like data.
@@ -116,7 +142,10 @@ func DefaultRules() []Rule {
 			Name:     "url-value",
 			Severity: "warning",
 			Check: func(_, _, value string) bool {
-				return urlRe.MatchString(strings.TrimSpace(value))
+				v := strings.TrimSpace(value)
+				// A plain endpoint URL is config; a URL carrying credentials is
+				// a secret, so don't flag it as non-secret data.
+				return urlRe.MatchString(v) && !credentialURLRe.MatchString(v)
 			},
 		},
 		{
@@ -145,13 +174,14 @@ func DefaultRules() []Rule {
 			Severity: "error",
 			Check: func(_, _, value string) bool {
 				v := strings.ToLower(strings.TrimSpace(value))
-				placeholders := []string{
-					"changeme", "todo", "fixme", "replace_me",
-					"xxx", "placeholder", "default", "example",
-					"your_", "insert_", "<change",
+				if v == "" {
+					return false
 				}
-				for _, p := range placeholders {
-					if strings.Contains(v, p) {
+				if placeholderWholeValues[v] {
+					return true
+				}
+				for _, m := range placeholderMarkers {
+					if strings.Contains(v, m) {
 						return true
 					}
 				}
