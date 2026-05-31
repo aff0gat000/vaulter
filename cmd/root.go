@@ -102,6 +102,11 @@ func newClient(cfg *Config) (*vaulter.Client, error) {
 	if os.Getenv("VAULT_ADDR") == "" {
 		return nil, fmt.Errorf("VAULT_ADDR environment variable is not set")
 	}
+	// The token is taken from the environment only — never a CLI flag — so it
+	// is not exposed in the process list or shell history.
+	if os.Getenv("VAULT_TOKEN") == "" {
+		return nil, fmt.Errorf("VAULT_TOKEN environment variable is not set")
+	}
 	return vaulter.New(vaulter.Config{
 		Mount:     cfg.Mount,
 		KVVersion: cfg.KVVersion,
@@ -131,7 +136,9 @@ func runAudit(cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	findings, count, err := client.Audit(context.Background(), cfg.Prefix)
+	findings, count, err := client.Audit(context.Background(), cfg.Prefix, vaulter.AuditOptions{
+		ShowValues: cfg.ShowValues,
+	})
 	if err != nil {
 		return err
 	}
@@ -152,6 +159,9 @@ func effectiveFormat(cfg *Config) string {
 }
 
 func emit(cfg *Config, command string, matches []vaulter.Match, findings []vaulter.Finding, secretCount int) error {
+	if cfg.ShowValues {
+		fmt.Fprintln(os.Stderr, "warning: --show-values prints secret values in cleartext; avoid shared logs and committed report files")
+	}
 	switch effectiveFormat(cfg) {
 	case "json":
 		return outputJSON(matches, findings, secretCount)

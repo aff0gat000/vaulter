@@ -74,11 +74,34 @@ vaulter audit --json
 
 ## Security
 
-- **Values are masked by default.** Use `--show-values` to display them.
+Vaulter is a **read-only auditing tool**. It authenticates with a Vault token
+you already hold and only reads secrets that token is permitted to read — it
+performs no credential guessing and cannot access anything beyond your existing
+authorization. See [SECURITY.md](SECURITY.md) for the threat model and
+responsible-use guidance.
+
+**Credential handling**
+- The token is read from the **`VAULT_TOKEN` environment variable only** — never
+  a CLI flag — so it never appears in the process list or shell history.
+- In the GitHub Action, always pass the token from a secret
+  (`${{ secrets.VAULT_TOKEN }}`); it is set as an env var and never logged.
+
+**Data handling**
+- **Values are masked by default** (`********`); `--show-values` is an explicit
+  opt-in and prints a warning, since cleartext values then appear in output and
+  any report files you write.
+- Vaulter does **not** persist secrets — nothing is written to disk; output goes
+  to stdout for you to handle. Every read is recorded by Vault's own audit
+  device.
+- `--key` / `--value` are **regular expressions**, not secrets — don't paste
+  sensitive values into them (they are visible in the process list).
+
+**Transport & input**
 - **TLS verification is enforced.** Use `--insecure` only for development.
 - Path traversal in `--mount` and `--prefix` is rejected.
-- Regex patterns are limited to 1024 characters to prevent ReDoS.
-- Request timeout prevents hanging on unreachable Vault instances.
+- Patterns are capped at 1024 characters; Go's RE2 regex engine runs in linear
+  time, so patterns cannot cause ReDoS.
+- A request timeout prevents hanging on unreachable Vault instances.
 
 ## Audit Rules
 
@@ -145,8 +168,8 @@ func main() {
 		panic(err)
 	}
 
-	// Audit a path against the built-in rules.
-	findings, scanned, err := c.Audit(context.Background(), "apps/")
+	// Audit a path against the built-in rules (values masked by default).
+	findings, scanned, err := c.Audit(context.Background(), "apps/", vaulter.AuditOptions{})
 	if err != nil {
 		panic(err)
 	}
@@ -162,7 +185,9 @@ func main() {
 }
 ```
 
-`Audit` accepts custom rules: `c.Audit(ctx, prefix, myRule1, myRule2)`. Pass none to use `vaulter.DefaultRules()`.
+`Audit` accepts custom rules and a show-values toggle via `AuditOptions`:
+`c.Audit(ctx, prefix, vaulter.AuditOptions{Rules: myRules, ShowValues: false})`.
+Leave `Rules` nil to use `vaulter.DefaultRules()`.
 
 Results can be rendered to HTML or Markdown via `pkg/vaulter/report`:
 
@@ -233,5 +258,12 @@ make docker     # Build Docker image
 make docker-scan # Scan Docker image with trivy
 ```
 
-For local testing against a real Vault (Mac and Linux, automated and manual
-flows), see [`test/integration/README.md`](test/integration/README.md).
+For local testing against a real Vault, start a seeded dev Vault in one line
+(Mac and Linux):
+
+```bash
+./start-local.sh          # start + seed; ./start-local.sh down to stop
+```
+
+Automated and manual flows are documented in
+[`test/integration/README.md`](test/integration/README.md).

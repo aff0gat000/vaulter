@@ -134,7 +134,7 @@ func TestAudit_DefaultRules(t *testing.T) {
 	srv := mockVault(t)
 	c := newTestClient(t, srv.URL)
 
-	findings, scanned, err := c.Audit(context.Background(), "")
+	findings, scanned, err := c.Audit(context.Background(), "", AuditOptions{})
 	if err != nil {
 		t.Fatalf("Audit: %v", err)
 	}
@@ -152,6 +152,37 @@ func TestAudit_DefaultRules(t *testing.T) {
 	}
 }
 
+func TestAudit_MasksByDefaultAndShowValues(t *testing.T) {
+	srv := mockVault(t)
+	c := newTestClient(t, srv.URL)
+
+	// Default: masked.
+	masked, _, err := c.Audit(context.Background(), "", AuditOptions{})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	for _, f := range masked {
+		if f.Value != "********" {
+			t.Errorf("expected masked value by default, got %q", f.Value)
+		}
+	}
+
+	// ShowValues: real values present (db_host is config-like).
+	shown, _, err := c.Audit(context.Background(), "", AuditOptions{ShowValues: true})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	found := false
+	for _, f := range shown {
+		if f.Key == "db_host" && f.Value == "db.internal" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected real db_host value with ShowValues, got %+v", shown)
+	}
+}
+
 func TestAudit_CustomRules(t *testing.T) {
 	srv := mockVault(t)
 	c := newTestClient(t, srv.URL)
@@ -162,7 +193,7 @@ func TestAudit_CustomRules(t *testing.T) {
 		Severity: "error",
 		Check:    func(_, key, _ string) bool { return key == "password" },
 	}
-	findings, _, err := c.Audit(context.Background(), "", rule)
+	findings, _, err := c.Audit(context.Background(), "", AuditOptions{Rules: []Rule{rule}})
 	if err != nil {
 		t.Fatalf("Audit: %v", err)
 	}

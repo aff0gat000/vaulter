@@ -112,14 +112,21 @@ func (c *Client) Search(ctx context.Context, prefix string, opts SearchOptions) 
 	return matches, count, err
 }
 
+// AuditOptions controls an Audit call.
+type AuditOptions struct {
+	Rules      []Rule // custom rules; DefaultRules() is used when nil
+	ShowValues bool   // include actual values in findings (false masks them)
+}
+
 // Audit walks the KV engine under prefix and returns findings produced by the
-// given rules (DefaultRules when none are supplied) along with the number of
-// secrets scanned.
-func (c *Client) Audit(ctx context.Context, prefix string, auditRules ...Rule) ([]Finding, int, error) {
+// configured rules (DefaultRules when none are supplied) along with the number
+// of secrets scanned. Values are masked unless opts.ShowValues is set.
+func (c *Client) Audit(ctx context.Context, prefix string, opts AuditOptions) ([]Finding, int, error) {
+	auditRules := opts.Rules
 	if len(auditRules) == 0 {
 		auditRules = rules.DefaultRules()
 	}
-	sc, err := scanner.New(scanner.Options{Rules: auditRules})
+	sc, err := scanner.New(scanner.Options{Rules: auditRules, ShowValues: opts.ShowValues})
 	if err != nil {
 		return nil, 0, err
 	}

@@ -67,8 +67,22 @@ func TestRunRequiresVaultAddr(t *testing.T) {
 	}
 }
 
+func TestRunRequiresVaultToken(t *testing.T) {
+	t.Setenv("VAULT_ADDR", "http://localhost:8200")
+	os.Unsetenv("VAULT_TOKEN")
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"search", "--key", "test"})
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	if err := cmd.Execute(); err == nil {
+		t.Error("expected error when VAULT_TOKEN is not set")
+	}
+}
+
 func TestSearchCmd_PathTraversal(t *testing.T) {
 	t.Setenv("VAULT_ADDR", "http://localhost:8200")
+	t.Setenv("VAULT_TOKEN", "test-token")
 	cmd := NewRootCmd()
 	cmd.SetArgs([]string{"search", "--key", "test", "--prefix", "../escape"})
 	buf := &bytes.Buffer{}
@@ -298,6 +312,7 @@ func TestSearchCmd_NoResults(t *testing.T) {
 
 func TestSearchCmd_MountPathTraversal(t *testing.T) {
 	t.Setenv("VAULT_ADDR", "http://localhost:8200")
+	t.Setenv("VAULT_TOKEN", "test-token")
 	cmd := NewRootCmd()
 	cmd.SetArgs([]string{"search", "--key", "test", "--mount", "../evil"})
 	buf := &bytes.Buffer{}
@@ -311,6 +326,7 @@ func TestSearchCmd_MountPathTraversal(t *testing.T) {
 
 func TestSearchCmd_InvalidKVVersion(t *testing.T) {
 	t.Setenv("VAULT_ADDR", "http://localhost:8200")
+	t.Setenv("VAULT_TOKEN", "test-token")
 	cmd := NewRootCmd()
 	cmd.SetArgs([]string{"search", "--key", "test", "--kv-version", "3"})
 	buf := &bytes.Buffer{}

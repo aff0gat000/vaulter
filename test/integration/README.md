@@ -49,11 +49,14 @@ Success prints `PASS: integration tests succeeded.`
 
 ## Interactive (start it and poke at it)
 
-Bring up a seeded Vault and leave it running:
+Bring up a seeded Vault and leave it running — simplest is the root one-liner:
 
 ```bash
-make integration-up        # or: ./test/integration/dev.sh up
+./start-local.sh           # start + seed (./start-local.sh down to stop)
 ```
+
+Equivalent: `make integration-up` / `make integration-down`, or
+`./test/integration/dev.sh up` / `down`.
 
 Then point your shell at it and try the CLI (run from the repo root):
 
