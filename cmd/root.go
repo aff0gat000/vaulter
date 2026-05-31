@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/yb/vaulter/pkg/vaulter"
-	"github.com/yb/vaulter/pkg/vaulter/report"
+	"github.com/aff0gat000/vaulter/pkg/vaulter"
+	"github.com/aff0gat000/vaulter/pkg/vaulter/report"
 )
 
 // Version is set at build time via ldflags.

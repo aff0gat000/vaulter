@@ -9,13 +9,13 @@ RUN go mod download
 COPY . .
 
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -ldflags "-s -w -X github.com/yb/vaulter/cmd.Version=${VERSION}" -o /vaulter .
+RUN CGO_ENABLED=0 go build -ldflags "-s -w -X github.com/aff0gat000/vaulter/cmd.Version=${VERSION}" -o /vaulter .
 
 FROM alpine:3.20
 
 LABEL org.opencontainers.image.title="vaulter" \
       org.opencontainers.image.description="Search and audit HashiCorp Vault KV secrets for non-secret data and misconfigurations" \
-      org.opencontainers.image.source="https://github.com/yb/vaulter"
+      org.opencontainers.image.source="https://github.com/aff0gat000/vaulter"
 
 RUN apk add --no-cache ca-certificates && \
     adduser -D -u 1000 vaulter

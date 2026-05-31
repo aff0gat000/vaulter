@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/yb/vaulter/internal/rules"
-	"github.com/yb/vaulter/internal/vault"
+	"github.com/aff0gat000/vaulter/internal/rules"
+	"github.com/aff0gat000/vaulter/internal/vault"
 )
 
 // MaxPatternLength is the maximum allowed regex pattern length to prevent ReDoS.

@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use Vaulter, please cite it as below."
+title: "Vaulter"
+abstract: "Search and audit HashiCorp Vault KV secrets for non-secret data, misconfigurations, and sensitive patterns."
+type: software
+authors:
+  - alias: aff0gat000
+repository-code: "https://github.com/aff0gat000/vaulter"
+url: "https://github.com/aff0gat000/vaulter"
+license: Apache-2.0
+keywords:
+  - vault
+  - secrets
+  - audit
+  - security
+  - hashicorp

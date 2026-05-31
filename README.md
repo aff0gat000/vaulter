@@ -5,7 +5,7 @@ Search and audit HashiCorp Vault KV secrets for non-secret data, misconfiguratio
 ## Install
 
 ```bash
-go install github.com/yb/vaulter@latest
+go install github.com/aff0gat000/vaulter@latest
 ```
 
 Or build from source:
@@ -158,7 +158,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yb/vaulter/pkg/vaulter"
+	"github.com/aff0gat000/vaulter/pkg/vaulter"
 )
 
 func main() {
@@ -192,7 +192,7 @@ Leave `Rules` nil to use `vaulter.DefaultRules()`.
 Results can be rendered to HTML or Markdown via `pkg/vaulter/report`:
 
 ```go
-import "github.com/yb/vaulter/pkg/vaulter/report"
+import "github.com/aff0gat000/vaulter/pkg/vaulter/report"
 
 findings, scanned, _ := c.Audit(context.Background(), "apps/")
 report.HTML(os.Stdout, report.Data{
@@ -213,7 +213,7 @@ severity threshold.
 
 ```yaml
 - name: Audit Vault for non-secret data
-  uses: your-org/vaulter@v1
+  uses: aff0gat000/vaulter@v1
   with:
     command: audit
     vault-addr: ${{ secrets.VAULT_ADDR }}
@@ -267,3 +267,7 @@ For local testing against a real Vault, start a seeded dev Vault in one line
 
 Automated and manual flows are documented in
 [`test/integration/README.md`](test/integration/README.md).
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE). Copyright 2026 aff0gat000.

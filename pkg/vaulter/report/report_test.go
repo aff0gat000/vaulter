@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yb/vaulter/pkg/vaulter"
+	"github.com/aff0gat000/vaulter/pkg/vaulter"
 )
 
 func sampleAudit() Data {

@@ -18,9 +18,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/yb/vaulter/internal/rules"
-	"github.com/yb/vaulter/internal/scanner"
-	"github.com/yb/vaulter/internal/vault"
+	"github.com/aff0gat000/vaulter/internal/rules"
+	"github.com/aff0gat000/vaulter/internal/scanner"
+	"github.com/aff0gat000/vaulter/internal/vault"
 )
 
 // Match is a single search hit (path, key, and possibly masked value).

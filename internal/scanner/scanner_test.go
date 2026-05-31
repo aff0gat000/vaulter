@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yb/vaulter/internal/rules"
-	"github.com/yb/vaulter/internal/vault"
+	"github.com/aff0gat000/vaulter/internal/rules"
+	"github.com/aff0gat000/vaulter/internal/vault"
 )
 
 func TestNew_InvalidKeyRegex(t *testing.T) {

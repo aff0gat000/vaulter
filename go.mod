@@ -1,4 +1,4 @@
-module github.com/yb/vaulter
+module github.com/aff0gat000/vaulter
 
 go 1.25.10
 

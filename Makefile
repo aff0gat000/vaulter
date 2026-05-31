@@ -1,5 +1,5 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -ldflags "-X github.com/yb/vaulter/cmd.Version=$(VERSION)"
+LDFLAGS := -ldflags "-X github.com/aff0gat000/vaulter/cmd.Version=$(VERSION)"
 
 .PHONY: build test cover integration integration-up integration-down lint clean docker docker-scan sast
 

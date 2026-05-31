@@ -12,7 +12,7 @@ import (
 
 	texttemplate "text/template"
 
-	"github.com/yb/vaulter/pkg/vaulter"
+	"github.com/aff0gat000/vaulter/pkg/vaulter"
 )
 
 // Data is the input to a report renderer.

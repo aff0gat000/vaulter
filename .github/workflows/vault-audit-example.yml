@@ -1,6 +1,6 @@
 # Example: gate a pipeline on the vaulter audit using the bundled action.
 # Copy this into a consuming repository (and replace `uses: ./` with
-# `uses: your-org/vaulter@v1`). Configure VAULT_ADDR and VAULT_TOKEN as repo
+# `uses: aff0gat000/vaulter@v1`). Configure VAULT_ADDR and VAULT_TOKEN as repo
 # secrets.
 name: Vault Audit (example)
 
