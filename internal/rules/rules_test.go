@@ -93,6 +93,61 @@ func TestDefaultRules(t *testing.T) {
 		{"base64-config", "", "password", "abc", false},
 		{"base64-config", "", "config", "abc", false},
 
+		// config-like-key compound keys (tokenized)
+		{"config-like-key", "app/db", "db_host", "secret", true},
+		{"config-like-key", "app/db", "api_url", "val", true},
+		{"config-like-key", "app/db", "DB_PORT", "val", true},
+		{"config-like-key", "app/db", "service.endpoint", "val", true},
+		{"config-like-key", "app/db", "primary-region", "val", true},
+		{"config-like-key", "app/db", "log_level", "val", true},
+		{"config-like-key", "app/db", "max_connections", "val", true},
+		{"config-like-key", "app/db", "secret_key", "val", false},
+		{"config-like-key", "app/db", "private_key", "val", false},
+
+		// feature-flag-key
+		{"feature-flag-key", "", "enable_cache", "true", true},
+		{"feature-flag-key", "", "disable_tls", "false", true},
+		{"feature-flag-key", "", "feature_x", "on", true},
+		{"feature-flag-key", "", "ff_new_ui", "on", true},
+		{"feature-flag-key", "", "cache_enabled", "true", true},
+		{"feature-flag-key", "", "tls_disabled", "false", true},
+		{"feature-flag-key", "", "ENABLE_CACHE", "true", true},
+		{"feature-flag-key", "", "password", "secret", false},
+		{"feature-flag-key", "", "enablement", "x", false},
+
+		// ip-address-value
+		{"ip-address-value", "", "k", "10.0.0.1", true},
+		{"ip-address-value", "", "k", "192.168.1.1:8080", true},
+		{"ip-address-value", "", "k", " 127.0.0.1 ", true},
+		{"ip-address-value", "", "k", "5432", false},
+		{"ip-address-value", "", "k", "not.an.ip.addr", false},
+		{"ip-address-value", "", "k", "", false},
+
+		// url-value
+		{"url-value", "", "k", "https://api.example.com/v1", true},
+		{"url-value", "", "k", "http://localhost:8200", true},
+		{"url-value", "", "k", "ftp://files.example.com", true},
+		{"url-value", "", "k", "example.com", false},
+		{"url-value", "", "k", "s3cr3t", false},
+		{"url-value", "", "k", "", false},
+
+		// file-path-value
+		{"file-path-value", "", "k", "/etc/passwd", true},
+		{"file-path-value", "", "k", "./config.yaml", true},
+		{"file-path-value", "", "k", "../secrets", true},
+		{"file-path-value", "", "k", `C:\Users\app`, true},
+		{"file-path-value", "", "k", "/", false},
+		{"file-path-value", "", "k", "plainvalue", false},
+		{"file-path-value", "", "k", "https://x.com/y", false},
+		{"file-path-value", "", "k", "", false},
+
+		// email-value
+		{"email-value", "", "k", "admin@example.com", true},
+		{"email-value", "", "k", "first.last@sub.example.co", true},
+		{"email-value", "", "k", "not-an-email", false},
+		{"email-value", "", "k", "a@b", false},
+		{"email-value", "", "k", "", false},
+
 		// Unicode edge cases
 		{"config-like-key", "", "host", "日本語", true},
 		{"placeholder-value", "", "k", "CHANGEME 日本", true},

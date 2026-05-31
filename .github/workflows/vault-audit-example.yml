@@ -1,0 +1,40 @@
+# Example: gate a pipeline on the vaulter audit using the bundled action.
+# Copy this into a consuming repository (and replace `uses: ./` with
+# `uses: your-org/vaulter@v1`). Configure VAULT_ADDR and VAULT_TOKEN as repo
+# secrets.
+name: Vault Audit (example)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Audit a path and fail the job if any error-severity findings exist.
+      - name: Audit Vault for non-secret data
+        uses: ./
+        with:
+          command: audit
+          vault-addr: ${{ secrets.VAULT_ADDR }}
+          vault-token: ${{ secrets.VAULT_TOKEN }}
+          mount: secret
+          prefix: apps/
+          fail-on-severity: error
+
+      # Example search usage (does not gate the build).
+      - name: Search for risky keys
+        uses: ./
+        with:
+          command: search
+          vault-addr: ${{ secrets.VAULT_ADDR }}
+          vault-token: ${{ secrets.VAULT_TOKEN }}
+          key: "password|token|secret"
+          json: "true"

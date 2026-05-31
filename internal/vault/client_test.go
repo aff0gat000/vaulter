@@ -62,6 +62,40 @@ func TestNewClient_Valid(t *testing.T) {
 	}
 }
 
+func TestNewClient_ExplicitAddressAndToken(t *testing.T) {
+	// No VAULT_ADDR/VAULT_TOKEN in env; supply them explicitly instead.
+	t.Setenv("VAULT_ADDR", "")
+	t.Setenv("VAULT_TOKEN", "")
+	c, err := NewClient(ClientConfig{
+		Address: "https://vault.internal:8200",
+		Token:   "s.explicit-token",
+		Mount:   "secret",
+		KVVer:   2,
+		Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := c.api.Address(); got != "https://vault.internal:8200" {
+		t.Errorf("address = %q, want explicit value", got)
+	}
+	if got := c.api.Token(); got != "s.explicit-token" {
+		t.Errorf("token = %q, want explicit value", got)
+	}
+}
+
+func TestNewClient_InvalidAddress(t *testing.T) {
+	t.Setenv("VAULT_ADDR", "http://localhost:8200")
+	_, err := NewClient(ClientConfig{
+		Address: "://not a url",
+		Mount:   "secret",
+		KVVer:   2,
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid explicit address")
+	}
+}
+
 func TestListPath(t *testing.T) {
 	tests := []struct {
 		kvVer    int
@@ -140,6 +174,183 @@ func TestWalk_WithMockServer_KV2(t *testing.T) {
 	}
 	if secrets[0].Data["password"] != "s3cret" {
 		t.Errorf("expected password 's3cret', got %v", secrets[0].Data["password"])
+	}
+}
+
+func TestWalk_NestedKV2(t *testing.T) {
+	mux := http.NewServeMux()
+	// LIST secret/metadata/ -> a subdir and a leaf
+	mux.HandleFunc("/v1/secret/metadata/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/secret/metadata/sub":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": map[string]interface{}{"keys": []string{"inner"}},
+			})
+		default: // /v1/secret/metadata/ (root)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": map[string]interface{}{"keys": []string{"sub/", "leaf"}},
+			})
+		}
+	})
+	mux.HandleFunc("/v1/secret/data/leaf", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{"data": map[string]interface{}{"k": "v1"}},
+		})
+	})
+	mux.HandleFunc("/v1/secret/data/sub/inner", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{"data": map[string]interface{}{"k": "v2"}},
+		})
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	t.Setenv("VAULT_ADDR", srv.URL)
+	client, err := NewClient(ClientConfig{Mount: "secret", KVVer: 2, Insecure: true, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	out := make(chan Secret, 10)
+	errCh := make(chan error, 1)
+	go func() { errCh <- client.Walk(context.Background(), "", out) }()
+
+	paths := map[string]bool{}
+	for s := range out {
+		paths[s.Path] = true
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if !paths["leaf"] || !paths["sub/inner"] {
+		t.Errorf("expected leaf and sub/inner, got %v", paths)
+	}
+}
+
+func TestWalk_KV1(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/kv/", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{"keys": []string{"app"}},
+		})
+	})
+	mux.HandleFunc("/v1/kv/app", func(w http.ResponseWriter, r *http.Request) {
+		// KV1: data is flat, no nested "data" wrapper.
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{"password": "kv1secret"},
+		})
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	t.Setenv("VAULT_ADDR", srv.URL)
+	client, err := NewClient(ClientConfig{Mount: "kv", KVVer: 1, Insecure: true, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	out := make(chan Secret, 10)
+	errCh := make(chan error, 1)
+	go func() { errCh <- client.Walk(context.Background(), "", out) }()
+
+	var secrets []Secret
+	for s := range out {
+		secrets = append(secrets, s)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(secrets) != 1 || secrets[0].Data["password"] != "kv1secret" {
+		t.Fatalf("expected kv1 secret, got %+v", secrets)
+	}
+}
+
+func TestWalk_ListError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/secret/metadata/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	t.Setenv("VAULT_ADDR", srv.URL)
+	client, err := NewClient(ClientConfig{Mount: "secret", KVVer: 2, Insecure: true, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	out := make(chan Secret, 1)
+	errCh := make(chan error, 1)
+	go func() { errCh <- client.Walk(context.Background(), "", out) }()
+	for range out {
+	}
+	if err := <-errCh; err == nil {
+		t.Fatal("expected error from failing LIST")
+	}
+}
+
+func TestWalk_ReadErrorAndNilData(t *testing.T) {
+	// "missing" returns no data (skipped); "boom" returns a read error.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/secret/metadata/", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{"keys": []string{"missing", "boom"}},
+		})
+	})
+	mux.HandleFunc("/v1/secret/data/missing", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound) // -> nil secret, skipped
+	})
+	mux.HandleFunc("/v1/secret/data/boom", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError) // -> read error
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	t.Setenv("VAULT_ADDR", srv.URL)
+	client, err := NewClient(ClientConfig{Mount: "secret", KVVer: 2, Insecure: true, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	out := make(chan Secret, 5)
+	errCh := make(chan error, 1)
+	go func() { errCh <- client.Walk(context.Background(), "", out) }()
+	for range out {
+	}
+	if err := <-errCh; err == nil {
+		t.Fatal("expected read error to propagate from Walk")
+	}
+}
+
+func TestWalk_CanceledContext(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/secret/metadata/", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{"keys": []string{"a"}},
+		})
+	})
+	mux.HandleFunc("/v1/secret/data/a", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{"data": map[string]interface{}{"k": "v"}},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	t.Setenv("VAULT_ADDR", srv.URL)
+	client, err := NewClient(ClientConfig{Mount: "secret", KVVer: 2, Insecure: true, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before walking
+	out := make(chan Secret) // unbuffered: send will observe ctx.Done
+	errCh := make(chan error, 1)
+	go func() { errCh <- client.Walk(ctx, "", out) }()
+	for range out {
+	}
+	// Either the list or the channel send observes cancellation; both are errors.
+	if err := <-errCh; err == nil {
+		t.Fatal("expected error from canceled context")
 	}
 }
 

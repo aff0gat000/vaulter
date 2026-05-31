@@ -1,0 +1,16 @@
+# Build artifacts
+vaulter
+*.exe
+dist/
+coverage.out
+coverage.html
+
+# VCS and tooling
+.git
+.github
+
+# Tests and local-only assets
+test/
+
+# Misc
+.env

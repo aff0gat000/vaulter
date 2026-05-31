@@ -25,6 +25,10 @@ type Walker interface {
 
 // ClientConfig holds configuration for creating a Vault client.
 type ClientConfig struct {
+	// Address overrides VAULT_ADDR when non-empty.
+	Address string
+	// Token overrides VAULT_TOKEN when non-empty.
+	Token    string
 	Mount    string
 	KVVer    int
 	Insecure bool
@@ -90,6 +94,16 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating vault client: %w", err)
 	}
+
+	if cfg.Address != "" {
+		if err := api.SetAddress(cfg.Address); err != nil {
+			return nil, fmt.Errorf("setting vault address: %w", err)
+		}
+	}
+	if cfg.Token != "" {
+		api.SetToken(cfg.Token)
+	}
+
 	return &Client{api: api, mount: cfg.Mount, kvVer: cfg.KVVer}, nil
 }
 

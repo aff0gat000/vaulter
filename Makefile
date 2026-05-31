@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-X github.com/yb/vaulter/cmd.Version=$(VERSION)"
 
-.PHONY: build test cover lint clean docker docker-scan sast
+.PHONY: build test cover integration lint clean docker docker-scan sast
 
 build:
 	go build $(LDFLAGS) -o vaulter .
@@ -13,6 +13,9 @@ cover:
 	go test ./... -race -coverprofile=coverage.out -covermode=atomic
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+
+integration:
+	./test/integration/run.sh
 
 lint:
 	go vet ./...

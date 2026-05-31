@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yb/vaulter/internal/rules"
 	"github.com/yb/vaulter/internal/vault"
 )
 
@@ -68,6 +69,16 @@ func TestProcess_ValueMatch(t *testing.T) {
 	}
 	if result.Matches[0].Key != "url" {
 		t.Errorf("expected key 'url', got %q", result.Matches[0].Key)
+	}
+}
+
+func TestNew_ExplicitRules(t *testing.T) {
+	s, err := New(Options{Rules: rules.DefaultRules()})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(s.rules) == 0 {
+		t.Fatal("expected explicit rules to be set")
 	}
 }
 

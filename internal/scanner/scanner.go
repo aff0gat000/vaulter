@@ -30,10 +30,11 @@ type ScanResult struct {
 
 // Options controls what the scanner looks for.
 type Options struct {
-	KeyPattern   string // regex to match against keys
-	ValuePattern string // regex to match against values
-	Audit        bool   // run audit rules
-	ShowValues   bool   // show actual values (false = mask)
+	KeyPattern   string       // regex to match against keys
+	ValuePattern string       // regex to match against values
+	Audit        bool         // run the default audit rules
+	Rules        []rules.Rule // explicit audit rules; overrides Audit when set
+	ShowValues   bool         // show actual values (false = mask)
 }
 
 // Scanner processes vault secrets.
@@ -68,7 +69,10 @@ func New(opts Options) (*Scanner, error) {
 		}
 		s.valueRe = re
 	}
-	if opts.Audit {
+	switch {
+	case opts.Rules != nil:
+		s.rules = opts.Rules
+	case opts.Audit:
 		s.rules = rules.DefaultRules()
 	}
 	return s, nil

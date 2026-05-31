@@ -9,9 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/yb/vaulter/internal/rules"
-	"github.com/yb/vaulter/internal/scanner"
-	"github.com/yb/vaulter/internal/vault"
+	"github.com/yb/vaulter/pkg/vaulter"
 )
 
 // Version is set at build time via ldflags.
@@ -72,11 +70,7 @@ func newSearchCmd(cfg *Config) *cobra.Command {
 			if cfg.KeyPattern == "" && cfg.ValPattern == "" {
 				return fmt.Errorf("at least one of --key or --value is required")
 			}
-			return run(cfg, scanner.Options{
-				KeyPattern:   cfg.KeyPattern,
-				ValuePattern: cfg.ValPattern,
-				ShowValues:   cfg.ShowValues,
-			})
+			return runSearch(cfg)
 		},
 	}
 	cmd.Flags().StringVarP(&cfg.KeyPattern, "key", "k", "", "Regex pattern to match against secret keys")
@@ -95,88 +89,80 @@ func newAuditCmd(cfg *Config) *cobra.Command {
   - Large values and JSON blobs
   - Base64-encoded configs`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run(cfg, scanner.Options{Audit: true, ShowValues: cfg.ShowValues})
+			return runAudit(cfg)
 		},
 	}
 }
 
-func run(cfg *Config, opts scanner.Options) error {
+func newClient(cfg *Config) (*vaulter.Client, error) {
 	if os.Getenv("VAULT_ADDR") == "" {
-		return fmt.Errorf("VAULT_ADDR environment variable is not set")
+		return nil, fmt.Errorf("VAULT_ADDR environment variable is not set")
 	}
+	return vaulter.New(vaulter.Config{
+		Mount:     cfg.Mount,
+		KVVersion: cfg.KVVersion,
+		Insecure:  cfg.Insecure,
+		Timeout:   cfg.Timeout,
+	})
+}
 
-	if err := vault.ValidateMountAndPrefix(cfg.Mount, cfg.Prefix); err != nil {
+func runSearch(cfg *Config) error {
+	client, err := newClient(cfg)
+	if err != nil {
 		return err
 	}
-
-	client, err := vault.NewClient(vault.ClientConfig{
-		Mount:    cfg.Mount,
-		KVVer:    cfg.KVVersion,
-		Insecure: cfg.Insecure,
-		Timeout:  cfg.Timeout,
+	matches, count, err := client.Search(context.Background(), cfg.Prefix, vaulter.SearchOptions{
+		KeyPattern:   cfg.KeyPattern,
+		ValuePattern: cfg.ValPattern,
+		ShowValues:   cfg.ShowValues,
 	})
 	if err != nil {
 		return err
 	}
+	return report(cfg, matches, nil, count)
+}
 
-	sc, err := scanner.New(opts)
+func runAudit(cfg *Config) error {
+	client, err := newClient(cfg)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
-	defer cancel()
-
-	secrets := make(chan vault.Secret, 50)
-	errCh := make(chan error, 1)
-
-	go func() {
-		errCh <- client.Walk(ctx, cfg.Prefix, secrets)
-	}()
-
-	var allMatches []scanner.Match
-	var allFindings []rules.Finding
-	secretCount := 0
-
-	for secret := range secrets {
-		secretCount++
-		result := sc.Process(secret)
-		allMatches = append(allMatches, result.Matches...)
-		allFindings = append(allFindings, result.Findings...)
-	}
-
-	if err := <-errCh; err != nil {
+	findings, count, err := client.Audit(context.Background(), cfg.Prefix)
+	if err != nil {
 		return err
 	}
+	return report(cfg, nil, findings, count)
+}
 
+func report(cfg *Config, matches []vaulter.Match, findings []vaulter.Finding, secretCount int) error {
 	if cfg.JSON {
-		return outputJSON(allMatches, allFindings, secretCount)
+		return outputJSON(matches, findings, secretCount)
 	}
 
-	if len(allMatches) > 0 {
-		printMatches(allMatches)
+	if len(matches) > 0 {
+		printMatches(matches)
 	}
-	if len(allFindings) > 0 {
-		printFindings(allFindings)
+	if len(findings) > 0 {
+		printFindings(findings)
 	}
 
 	fmt.Fprintf(os.Stderr, "\nScanned %d secrets", secretCount)
-	if len(allMatches) > 0 {
-		fmt.Fprintf(os.Stderr, ", %d matches", len(allMatches))
+	if len(matches) > 0 {
+		fmt.Fprintf(os.Stderr, ", %d matches", len(matches))
 	}
-	if len(allFindings) > 0 {
-		fmt.Fprintf(os.Stderr, ", %d findings", len(allFindings))
+	if len(findings) > 0 {
+		fmt.Fprintf(os.Stderr, ", %d findings", len(findings))
 	}
 	fmt.Fprintln(os.Stderr)
 
-	if len(allMatches) == 0 && len(allFindings) == 0 {
+	if len(matches) == 0 && len(findings) == 0 {
 		fmt.Fprintln(os.Stderr, "No results found.")
 	}
 
 	return nil
 }
 
-func printMatches(matches []scanner.Match) {
+func printMatches(matches []vaulter.Match) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "PATH\tKEY\tVALUE")
 	for _, m := range matches {
@@ -185,7 +171,7 @@ func printMatches(matches []scanner.Match) {
 	w.Flush()
 }
 
-func printFindings(findings []rules.Finding) {
+func printFindings(findings []vaulter.Finding) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "SEVERITY\tRULE\tPATH\tKEY\tVALUE")
 	for _, f := range findings {
@@ -194,7 +180,7 @@ func printFindings(findings []rules.Finding) {
 	w.Flush()
 }
 
-func outputJSON(matches []scanner.Match, findings []rules.Finding, count int) error {
+func outputJSON(matches []vaulter.Match, findings []vaulter.Finding, count int) error {
 	out := map[string]interface{}{
 		"secrets_scanned": count,
 		"matches":         matches,

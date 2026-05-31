@@ -4,4 +4,3 @@ coverage.html
 dist/
 .env
 *.exe
-.claude/

@@ -1,0 +1,79 @@
+name: "Vaulter"
+description: "Search and audit HashiCorp Vault KV secrets for non-secret data and misconfigurations."
+author: "vaulter"
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  command:
+    description: "Subcommand to run: audit or search."
+    required: false
+    default: "audit"
+  vault-addr:
+    description: "Vault address (sets VAULT_ADDR). Falls back to the VAULT_ADDR env var."
+    required: false
+    default: ""
+  vault-token:
+    description: "Vault token (sets VAULT_TOKEN). Falls back to the VAULT_TOKEN env var. Use a secret."
+    required: false
+    default: ""
+  mount:
+    description: "KV engine mount path."
+    required: false
+    default: "secret"
+  kv-version:
+    description: "KV engine version (1 or 2)."
+    required: false
+    default: "2"
+  prefix:
+    description: "Path prefix to scan under."
+    required: false
+    default: ""
+  key:
+    description: "Regex matched against secret keys (search only)."
+    required: false
+    default: ""
+  value:
+    description: "Regex matched against secret values (search only)."
+    required: false
+    default: ""
+  json:
+    description: "Emit JSON output."
+    required: false
+    default: "false"
+  show-values:
+    description: "Show secret values instead of masking them. Avoid in CI logs."
+    required: false
+    default: "false"
+  insecure:
+    description: "Skip TLS verification (not recommended)."
+    required: false
+    default: "false"
+  timeout:
+    description: "Vault request timeout (e.g. 30s)."
+    required: false
+    default: "30s"
+  fail-on-severity:
+    description: "For audit: fail the job when findings reach this severity (none | warning | error)."
+    required: false
+    default: "error"
+
+runs:
+  using: "docker"
+  image: "Dockerfile"
+  entrypoint: "/usr/local/bin/entrypoint.sh"
+  env:
+    VAULTER_COMMAND: ${{ inputs.command }}
+    VAULT_ADDR: ${{ inputs.vault-addr }}
+    VAULT_TOKEN: ${{ inputs.vault-token }}
+    VAULTER_MOUNT: ${{ inputs.mount }}
+    VAULTER_KV_VERSION: ${{ inputs.kv-version }}
+    VAULTER_PREFIX: ${{ inputs.prefix }}
+    VAULTER_KEY: ${{ inputs.key }}
+    VAULTER_VALUE: ${{ inputs.value }}
+    VAULTER_JSON: ${{ inputs.json }}
+    VAULTER_SHOW_VALUES: ${{ inputs.show-values }}
+    VAULTER_INSECURE: ${{ inputs.insecure }}
+    VAULTER_TIMEOUT: ${{ inputs.timeout }}
+    VAULTER_FAIL_ON: ${{ inputs.fail-on-severity }}
