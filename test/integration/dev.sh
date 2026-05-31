@@ -23,7 +23,7 @@ if docker compose version >/dev/null 2>&1; then
 elif command -v docker-compose >/dev/null 2>&1; then
   DC="docker-compose"
 else
-  echo "error: need 'docker compose' (Docker Desktop/OrbStack) or 'docker-compose'." >&2
+  echo "error: Docker Compose not found. Need 'docker compose' (v2) or 'docker-compose' (v1) with a running Docker daemon." >&2
   exit 1
 fi
 COMPOSE="$DC -f $SCRIPT_DIR/docker-compose.yml"

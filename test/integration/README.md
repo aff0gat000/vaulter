@@ -16,21 +16,29 @@ Apple Silicon / M-series) and Linux.
 
 ## Prerequisites
 
-You need **Go** and a **Docker runtime with Compose**.
+You need **Go** and **Docker** — specifically the `docker` CLI with a running
+daemon and Docker Compose. The scripts are runtime-agnostic: they only call
+`docker` / `docker compose` and don't require any particular Docker
+distribution. Verify your setup with:
+
+```bash
+docker version && docker compose version
+```
+
+**Linux (straight Docker Engine):**
+```bash
+sudo apt-get update
+sudo apt-get install -y golang-go docker.io docker-compose-v2   # or docker-ce + docker-compose-plugin
+sudo usermod -aG docker "$USER"   # then log out/in so `docker` works without sudo
+```
 
 **macOS (incl. M4 / Apple Silicon):**
 ```bash
 brew install go
-brew install orbstack       # lightest option on Apple Silicon
-# or: Docker Desktop, or `brew install colima docker docker-compose && colima start`
 ```
-
-**Ubuntu / Debian:**
-```bash
-sudo apt-get update
-sudo apt-get install -y golang-go docker.io docker-compose-v2
-sudo usermod -aG docker "$USER"   # then log out/in so `docker` works without sudo
-```
+Docker's daemon is Linux-only, so on macOS it runs inside a lightweight Linux
+VM. Provision that VM with whatever Docker runtime your organization has
+approved, start it, then confirm `docker` and `docker compose` work.
 
 The scripts auto-detect either the `docker compose` plugin (v2) or the legacy
 `docker-compose` (v1). On Apple Silicon everything runs natively as `arm64` —
@@ -113,11 +121,12 @@ docker compose down -v
 
 ## Troubleshooting
 
-- **`Cannot connect to the Docker daemon`** — start your runtime (Docker
-  Desktop / OrbStack, or `colima start`).
+- **`Cannot connect to the Docker daemon`** — the daemon isn't running. Start
+  it (on macOS, start your Linux-VM Docker runtime first).
 - **Port 8200 already in use** — something else (maybe a real Vault) is bound to
   it. Stop it, or change the published port in `docker-compose.yml`.
-- **`docker compose` not found** — install the Compose plugin
-  (`docker-compose-v2` on Ubuntu) or use Docker Desktop / OrbStack.
+- **`docker compose` not found** — install Compose v2 (`docker-compose-v2` or
+  `docker-compose-plugin`); the scripts also fall back to legacy
+  `docker-compose` (v1).
 - **Permission denied talking to Docker on Linux** — add yourself to the
   `docker` group (see prerequisites) and re-login.
