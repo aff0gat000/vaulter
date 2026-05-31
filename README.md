@@ -222,11 +222,16 @@ A ready-to-copy workflow lives at
 ## Contributing
 
 ```bash
-make test        # Run unit tests
-make cover       # Generate coverage report
-make integration # Run end-to-end tests against Vault in Docker
+make test            # Run unit tests
+make cover           # Generate coverage report
+make integration     # Run end-to-end tests against Vault in Docker (one shot)
+make integration-up  # Start a local seeded Vault and leave it running
+make integration-down # Tear down the local Vault
 make lint       # Run go vet + staticcheck
 make sast       # Run gosec + govulncheck
 make docker     # Build Docker image
 make docker-scan # Scan Docker image with trivy
 ```
+
+For local testing against a real Vault (Mac and Linux, automated and manual
+flows), see [`test/integration/README.md`](test/integration/README.md).

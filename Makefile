@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-X github.com/yb/vaulter/cmd.Version=$(VERSION)"
 
-.PHONY: build test cover integration lint clean docker docker-scan sast
+.PHONY: build test cover integration integration-up integration-down lint clean docker docker-scan sast
 
 build:
 	go build $(LDFLAGS) -o vaulter .
@@ -16,6 +16,14 @@ cover:
 
 integration:
 	./test/integration/run.sh
+
+# Start a local Vault (dev mode) seeded with dummy data and leave it running.
+integration-up:
+	./test/integration/dev.sh up
+
+# Stop and remove the local dev Vault.
+integration-down:
+	./test/integration/dev.sh down
 
 lint:
 	go vet ./...
