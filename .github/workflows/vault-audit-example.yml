@@ -16,7 +16,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Audit a path and fail the job if any error-severity findings exist.
       - name: Audit Vault for non-secret data
