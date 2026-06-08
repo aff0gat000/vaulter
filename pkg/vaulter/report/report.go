@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package report renders vaulter search/audit results as shareable HTML or
 // Markdown documents — useful for publishing as CI artifacts or for review by
 // people who don't live in a terminal.
@@ -17,13 +19,13 @@ import (
 
 // Data is the input to a report renderer.
 type Data struct {
-	Command   string             // "audit" or "search"
-	Mount     string             // KV mount that was scanned
-	Prefix    string             // path prefix that was scanned
-	Scanned   int                // number of secrets scanned
-	Matches   []vaulter.Match    // search matches (search reports)
-	Findings  []vaulter.Finding  // audit findings (audit reports)
-	Generated time.Time          // generation time; omitted when zero
+	Command   string            // "audit" or "search"
+	Mount     string            // KV mount that was scanned
+	Prefix    string            // path prefix that was scanned
+	Scanned   int               // number of secrets scanned
+	Matches   []vaulter.Match   // search matches (search reports)
+	Findings  []vaulter.Finding // audit findings (audit reports)
+	Generated time.Time         // generation time; omitted when zero
 }
 
 // view is the template-facing model with derived fields.

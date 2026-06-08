@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package vault
 
 import (
@@ -321,6 +323,95 @@ func TestWalk_ReadErrorAndNilData(t *testing.T) {
 	}
 }
 
+func TestWalk_SkipsForbidden(t *testing.T) {
+	// "secret-ok" reads fine; "denied" returns 403 and must be skipped, not fatal.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/secret/metadata/", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{"keys": []string{"secret-ok", "denied"}},
+		})
+	})
+	mux.HandleFunc("/v1/secret/data/secret-ok", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{"data": map[string]interface{}{"k": "v"}},
+		})
+	})
+	mux.HandleFunc("/v1/secret/data/denied", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"errors": []string{"permission denied"}})
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	t.Setenv("VAULT_ADDR", srv.URL)
+	client, err := NewClient(ClientConfig{Mount: "secret", KVVer: 2, Insecure: true, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	out := make(chan Secret, 5)
+	errCh := make(chan error, 1)
+	go func() { errCh <- client.Walk(context.Background(), "", out) }()
+	var secrets []Secret
+	for s := range out {
+		secrets = append(secrets, s)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("Walk should skip 403 paths, not fail: %v", err)
+	}
+	if len(secrets) != 1 || secrets[0].Path != "secret-ok" {
+		t.Fatalf("expected only secret-ok, got %+v", secrets)
+	}
+	skipped := client.SkippedPaths()
+	if len(skipped) != 1 || skipped[0] != "denied" {
+		t.Errorf("expected skipped [denied], got %v", skipped)
+	}
+}
+
+func TestWalk_SkipsForbiddenList(t *testing.T) {
+	// A 403 listing a subtree skips that subtree rather than aborting the walk.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/secret/metadata/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/secret/metadata/locked" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{"keys": []string{"locked/", "leaf"}},
+		})
+	})
+	mux.HandleFunc("/v1/secret/data/leaf", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{"data": map[string]interface{}{"k": "v"}},
+		})
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	t.Setenv("VAULT_ADDR", srv.URL)
+	client, err := NewClient(ClientConfig{Mount: "secret", KVVer: 2, Insecure: true, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	out := make(chan Secret, 5)
+	errCh := make(chan error, 1)
+	go func() { errCh <- client.Walk(context.Background(), "", out) }()
+	var paths []string
+	for s := range out {
+		paths = append(paths, s.Path)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("Walk should skip forbidden subtree, not fail: %v", err)
+	}
+	if len(paths) != 1 || paths[0] != "leaf" {
+		t.Fatalf("expected only leaf, got %v", paths)
+	}
+	if len(client.SkippedPaths()) != 1 {
+		t.Errorf("expected 1 skipped subtree, got %v", client.SkippedPaths())
+	}
+}
+
 func TestWalk_CanceledContext(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/secret/metadata/", func(w http.ResponseWriter, r *http.Request) {
@@ -342,7 +433,7 @@ func TestWalk_CanceledContext(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel before walking
+	cancel()                 // cancel before walking
 	out := make(chan Secret) // unbuffered: send will observe ctx.Done
 	errCh := make(chan error, 1)
 	go func() { errCh <- client.Walk(ctx, "", out) }()

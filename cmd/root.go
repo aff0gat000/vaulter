@@ -1,17 +1,22 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package cmd
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/aff0gat000/vaulter/pkg/vaulter"
 	"github.com/aff0gat000/vaulter/pkg/vaulter/report"
+	"github.com/spf13/cobra"
 )
 
 // Version is set at build time via ldflags.
@@ -30,7 +35,14 @@ type Config struct {
 	Insecure   bool
 	Timeout    time.Duration
 	ShowValues bool
+	FailOn     string
 }
+
+// gateError signals that an audit's findings reached the --fail-on-severity
+// threshold. Execute maps it to exit code 2, distinct from operational errors.
+type gateError struct{ msg string }
+
+func (e *gateError) Error() string { return e.msg }
 
 func NewRootCmd() *cobra.Command {
 	cfg := &Config{}
@@ -46,6 +58,10 @@ func NewRootCmd() *cobra.Command {
 Useful for vault maintenance, migration planning, and policy enforcement.
 
 Requires VAULT_ADDR and VAULT_TOKEN environment variables.`,
+		// Execute handles error formatting and exit codes; don't let cobra dump
+		// usage text on operational or gate errors.
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 
 	root.PersistentFlags().StringVarP(&cfg.Mount, "mount", "m", "secret", "KV engine mount path")
@@ -83,7 +99,7 @@ func newSearchCmd(cfg *Config) *cobra.Command {
 }
 
 func newAuditCmd(cfg *Config) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "audit",
 		Short: "Find non-secret and config-like data in vault",
 		Long: `Scans secrets for items that probably shouldn't be stored in Vault:
@@ -95,6 +111,22 @@ func newAuditCmd(cfg *Config) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAudit(cfg)
 		},
+	}
+	cmd.Flags().StringVar(&cfg.FailOn, "fail-on-severity", "none",
+		"Exit non-zero (code 2) when findings reach this severity: none, warning, or error")
+	return cmd
+}
+
+// signalContext returns a context cancelled on SIGINT/SIGTERM so an in-flight
+// walk stops cleanly when the user interrupts.
+func signalContext() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+}
+
+// warnSkipped notes any paths skipped due to insufficient permissions.
+func warnSkipped(client *vaulter.Client) {
+	if n := len(client.SkippedPaths()); n > 0 {
+		fmt.Fprintf(os.Stderr, "warning: skipped %d path(s) the token is not permitted to read\n", n)
 	}
 }
 
@@ -116,11 +148,13 @@ func newClient(cfg *Config) (*vaulter.Client, error) {
 }
 
 func runSearch(cfg *Config) error {
+	ctx, stop := signalContext()
+	defer stop()
 	client, err := newClient(cfg)
 	if err != nil {
 		return err
 	}
-	matches, count, err := client.Search(context.Background(), cfg.Prefix, vaulter.SearchOptions{
+	matches, count, err := client.Search(ctx, cfg.Prefix, vaulter.SearchOptions{
 		KeyPattern:   cfg.KeyPattern,
 		ValuePattern: cfg.ValPattern,
 		ShowValues:   cfg.ShowValues,
@@ -128,21 +162,60 @@ func runSearch(cfg *Config) error {
 	if err != nil {
 		return err
 	}
+	warnSkipped(client)
 	return emit(cfg, "search", matches, nil, count)
 }
 
 func runAudit(cfg *Config) error {
+	ctx, stop := signalContext()
+	defer stop()
 	client, err := newClient(cfg)
 	if err != nil {
 		return err
 	}
-	findings, count, err := client.Audit(context.Background(), cfg.Prefix, vaulter.AuditOptions{
+	findings, count, err := client.Audit(ctx, cfg.Prefix, vaulter.AuditOptions{
 		ShowValues: cfg.ShowValues,
 	})
 	if err != nil {
 		return err
 	}
-	return emit(cfg, "audit", nil, findings, count)
+	warnSkipped(client)
+	if err := emit(cfg, "audit", nil, findings, count); err != nil {
+		return err
+	}
+	return gate(cfg, findings, count)
+}
+
+// gate prints a machine-readable audit summary to stderr and, when
+// --fail-on-severity is set, returns a gateError if findings reach the
+// threshold. The summary line is stable for CI consumers to parse.
+func gate(cfg *Config, findings []vaulter.Finding, scanned int) error {
+	errs, warns := 0, 0
+	for _, f := range findings {
+		switch f.Severity {
+		case "error":
+			errs++
+		case "warning":
+			warns++
+		}
+	}
+	fmt.Fprintf(os.Stderr, "vaulter audit summary: scanned=%d errors=%d warnings=%d\n", scanned, errs, warns)
+
+	switch strings.ToLower(strings.TrimSpace(cfg.FailOn)) {
+	case "", "none":
+		return nil
+	case "error":
+		if errs > 0 {
+			return &gateError{fmt.Sprintf("audit gate: %d error-severity finding(s) (--fail-on-severity=error)", errs)}
+		}
+	case "warning":
+		if errs+warns > 0 {
+			return &gateError{fmt.Sprintf("audit gate: %d finding(s) at or above warning (--fail-on-severity=warning)", errs+warns)}
+		}
+	default:
+		return fmt.Errorf("invalid --fail-on-severity %q (use none, warning, or error)", cfg.FailOn)
+	}
+	return nil
 }
 
 // effectiveFormat resolves --format / --json into a single format string.
@@ -190,10 +263,14 @@ func reportData(cfg *Config, command string, matches []vaulter.Match, findings [
 
 func printTable(matches []vaulter.Match, findings []vaulter.Finding, secretCount int) error {
 	if len(matches) > 0 {
-		printMatches(matches)
+		if err := printMatches(matches); err != nil {
+			return err
+		}
 	}
 	if len(findings) > 0 {
-		printFindings(findings)
+		if err := printFindings(findings); err != nil {
+			return err
+		}
 	}
 
 	fmt.Fprintf(os.Stderr, "\nScanned %d secrets", secretCount)
@@ -212,22 +289,22 @@ func printTable(matches []vaulter.Match, findings []vaulter.Finding, secretCount
 	return nil
 }
 
-func printMatches(matches []vaulter.Match) {
+func printMatches(matches []vaulter.Match) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "PATH\tKEY\tVALUE")
 	for _, m := range matches {
 		fmt.Fprintf(w, "%s\t%s\t%s\n", m.Path, m.Key, m.Value)
 	}
-	w.Flush()
+	return w.Flush()
 }
 
-func printFindings(findings []vaulter.Finding) {
+func printFindings(findings []vaulter.Finding) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "SEVERITY\tRULE\tPATH\tKEY\tVALUE")
 	for _, f := range findings {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", f.Severity, f.Rule, f.Path, f.Key, f.Value)
 	}
-	w.Flush()
+	return w.Flush()
 }
 
 func outputJSON(matches []vaulter.Match, findings []vaulter.Finding, count int) error {
@@ -241,8 +318,21 @@ func outputJSON(matches []vaulter.Match, findings []vaulter.Finding, count int) 
 	return enc.Encode(out)
 }
 
+// Execute runs the root command and maps errors to exit codes:
+//
+//	0  success
+//	1  operational error (bad config, Vault/connection failure, etc.)
+//	2  audit gate tripped (findings reached --fail-on-severity)
 func Execute() {
-	if err := NewRootCmd().Execute(); err != nil {
-		os.Exit(1)
+	err := NewRootCmd().Execute()
+	if err == nil {
+		return
 	}
+	var ge *gateError
+	if errors.As(err, &ge) {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	fmt.Fprintln(os.Stderr, "error:", err)
+	os.Exit(1)
 }

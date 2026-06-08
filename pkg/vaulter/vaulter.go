@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package vaulter provides a programmatic API for searching and auditing
 // HashiCorp Vault KV secrets, mirroring the behavior of the vaulter CLI.
 //
@@ -95,6 +97,12 @@ func New(cfg Config) (*Client, error) {
 
 	return &Client{vc: vc, timeout: timeout}, nil
 }
+
+// SkippedPaths returns the paths the most recent Search or Audit could not read
+// because the token lacked permission (HTTP 403). Such paths are skipped rather
+// than failing the whole walk, so a token with partial access still audits
+// everything it can reach. Valid to read after Search or Audit returns.
+func (c *Client) SkippedPaths() []string { return c.vc.SkippedPaths() }
 
 // Search walks the KV engine under prefix and returns matches for the given
 // patterns along with the number of secrets scanned.

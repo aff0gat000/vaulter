@@ -3,6 +3,9 @@ version: 2
 builds:
   - env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - linux
       - darwin
@@ -14,14 +17,32 @@ builds:
       - -s -w -X github.com/aff0gat000/vaulter/cmd.Version={{.Version}}
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
 checksum:
   name_template: "checksums.txt"
+
+# Generate a CycloneDX SBOM for each released archive (requires syft in PATH).
+sboms:
+  - artifacts: archive
+
+# Keyless cosign signature over the checksums file, which transitively covers
+# every released artifact (requires cosign in PATH and id-token: write).
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+    output: true
 
 changelog:
   sort: asc

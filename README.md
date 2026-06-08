@@ -2,6 +2,38 @@
 
 Search and audit HashiCorp Vault KV secrets for non-secret data, misconfigurations, and sensitive patterns.
 
+## Why Vaulter
+
+Vault is for secrets, but over time KV mounts accumulate things that aren't
+secrets at all — hostnames, ports, feature flags, booleans, empty values, and
+`changeme` placeholders left behind by copy-paste. That sprawl makes Vault
+harder to reason about, inflates blast radius, and hides the real secrets among
+noise.
+
+Vaulter is a **read-only** tool that walks a KV engine and tells you:
+
+- **What shouldn't be there** — `audit` flags config-like and placeholder data
+  using precision-tuned rules (it treats credential-bearing URLs as secrets, not
+  config, to avoid false positives).
+- **Where a value or key lives** — `search` finds keys/values by regex across the
+  whole mount, for migrations, rotations, and impact analysis.
+- **A pass/fail signal for CI** — `audit --fail-on-severity` (and the bundled
+  GitHub Action) can gate a pipeline so hygiene regressions are caught in review.
+
+It ships three ways from one codebase — a **Go module** (`pkg/vaulter`), a
+**single-binary CLI**, and a **container image / GitHub Action** — and is built
+to be safe by default: values are masked, TLS is verified, the token is only ever
+read from the environment, and nothing is written to disk. See
+[the documentation](#documentation) for depth.
+
+## Documentation
+
+- [docs/build.md](docs/build.md) — build from source, as a Go module, CLI, and
+  Docker image; reproducible builds and verifying signed releases.
+- [docs/usage.md](docs/usage.md) — full command/flag reference, exit codes,
+  output formats, and CI integration.
+- [SECURITY.md](SECURITY.md) — threat model, responsible use, and reporting.
+
 ## Install
 
 ```bash
@@ -55,7 +87,20 @@ Scan secrets against built-in rules to find data that probably shouldn't be in V
 ```bash
 vaulter audit --mount secret --prefix legacy/
 vaulter audit --json
+
+# Gate a pipeline: exit non-zero when findings reach a severity
+vaulter audit --fail-on-severity error
 ```
+
+`audit` accepts `--fail-on-severity none|warning|error` (default `none`). When
+set, vaulter exits **2** if findings reach the threshold, **1** on operational
+errors, and **0** otherwise — see [Exit codes](docs/usage.md#exit-codes). It also
+prints a machine-readable summary line to stderr:
+`vaulter audit summary: scanned=N errors=N warnings=N`.
+
+Paths the supplied token is not permitted to read (HTTP 403) are **skipped**
+rather than aborting the run, so a least-privilege token still audits everything
+it can reach; the number skipped is reported on stderr.
 
 ## Flags
 
@@ -71,6 +116,7 @@ vaulter audit --json
 | `--show-values` | `false` | Show secret values (masked by default) |
 | `--key, -k` | | Regex pattern for keys (search only) |
 | `--value, -v` | | Regex pattern for values (search only) |
+| `--fail-on-severity` | `none` | Exit code 2 when audit findings reach this severity: `none`, `warning`, `error` (audit only) |
 
 ## Security
 
@@ -243,6 +289,32 @@ severity threshold.
 
 A ready-to-copy workflow lives at
 [`.github/workflows/vault-audit-example.yml`](.github/workflows/vault-audit-example.yml).
+
+## Verifying releases
+
+Releases are built with [GoReleaser](https://goreleaser.com), signed with
+[cosign](https://docs.sigstore.dev/) (keyless), and ship a CycloneDX SBOM per
+archive. The container image carries SLSA build provenance and an SBOM, and is
+signed with cosign.
+
+```bash
+# Verify the checksums signature (binaries archives)
+cosign verify-blob \
+  --certificate checksums.txt.pem \
+  --signature checksums.txt.sig \
+  --certificate-identity-regexp 'https://github.com/aff0gat000/vaulter' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+sha256sum -c checksums.txt        # then verify the archive against checksums
+
+# Verify the container image signature and provenance
+cosign verify \
+  --certificate-identity-regexp 'https://github.com/aff0gat000/vaulter' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/aff0gat000/vaulter:latest
+```
+
+Full details in [docs/build.md](docs/build.md#verifying-releases).
 
 ## Contributing
 

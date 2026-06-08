@@ -1,7 +1,10 @@
 #!/bin/sh
 # Entrypoint for the vaulter GitHub Action. Maps action inputs (passed as
-# VAULTER_* env vars plus VAULT_ADDR/VAULT_TOKEN) to a vaulter invocation, and
-# optionally fails the job when audit findings reach a severity threshold.
+# VAULTER_* env vars plus VAULT_ADDR/VAULT_TOKEN) to a vaulter invocation.
+#
+# Gating is delegated to vaulter itself via --fail-on-severity: vaulter exits
+# with code 2 when findings reach the threshold, which fails the job. This
+# script only translates inputs and renders a short job summary.
 set -eu
 
 CMD="${VAULTER_COMMAND:-audit}"
@@ -15,62 +18,41 @@ set -- "$CMD"
 [ -n "${VAULTER_TIMEOUT:-}" ]    && set -- "$@" --timeout "$VAULTER_TIMEOUT"
 [ "${VAULTER_INSECURE:-false}" = "true" ]    && set -- "$@" --insecure
 [ "${VAULTER_SHOW_VALUES:-false}" = "true" ] && set -- "$@" --show-values
+[ "${VAULTER_JSON:-false}" = "true" ]        && set -- "$@" --json
 
 if [ "$CMD" = "search" ]; then
   [ -n "${VAULTER_KEY:-}" ]   && set -- "$@" --key "$VAULTER_KEY"
   [ -n "${VAULTER_VALUE:-}" ] && set -- "$@" --value "$VAULTER_VALUE"
 fi
 
-# When gating an audit on severity, we need JSON to count findings.
-WANT_JSON="${VAULTER_JSON:-false}"
-if [ "$CMD" = "audit" ] && [ "$FAIL_ON" != "none" ]; then
-  WANT_JSON="true"
+if [ "$CMD" = "audit" ]; then
+  set -- "$@" --fail-on-severity "$FAIL_ON"
 fi
-[ "$WANT_JSON" = "true" ] && set -- "$@" --json
 
 echo "+ vaulter $*" >&2
 
-# Audit gating path: capture output, count by severity, decide exit code.
-if [ "$CMD" = "audit" ] && [ "$FAIL_ON" != "none" ]; then
-  OUT="$(vaulter "$@")"
-  echo "$OUT"
+# Capture stderr (where vaulter prints its machine-readable audit summary) while
+# stdout streams normally. vaulter's own exit code drives the job result.
+err_file="$(mktemp)"
+set +e
+vaulter "$@" 2>"$err_file"
+status=$?
+set -e
+cat "$err_file" >&2
 
-  errors=$(printf '%s' "$OUT" | grep -Eoc '"Severity":[[:space:]]*"error"' || true)
-  warnings=$(printf '%s' "$OUT" | grep -Eoc '"Severity":[[:space:]]*"warning"' || true)
-  errors=${errors:-0}
-  warnings=${warnings:-0}
-  total=$((errors + warnings))
-
-  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-    {
-      echo "### vaulter audit"
-      echo ""
-      echo "- errors: **$errors**"
-      echo "- warnings: **$warnings**"
-      echo "- fail-on-severity: \`$FAIL_ON\`"
-    } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
-  fi
-
-  case "$FAIL_ON" in
-    error)
-      if [ "$errors" -gt 0 ]; then
-        echo "::error::vaulter audit found $errors error-severity finding(s)" >&2
-        exit 1
-      fi
-      ;;
-    warning)
-      if [ "$total" -gt 0 ]; then
-        echo "::error::vaulter audit found $total finding(s) at or above warning" >&2
-        exit 1
-      fi
-      ;;
-    *)
-      echo "::error::unknown fail-on-severity '$FAIL_ON' (use none|warning|error)" >&2
-      exit 2
-      ;;
-  esac
-  exit 0
+# Render a job summary for audit runs from the "vaulter audit summary:" line.
+if [ "$CMD" = "audit" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  summary="$(grep -E 'vaulter audit summary:' "$err_file" | tail -n1 || true)"
+  errors=$(printf '%s' "$summary" | sed -n 's/.*errors=\([0-9]*\).*/\1/p')
+  warnings=$(printf '%s' "$summary" | sed -n 's/.*warnings=\([0-9]*\).*/\1/p')
+  {
+    echo "### vaulter audit"
+    echo ""
+    echo "- errors: **${errors:-0}**"
+    echo "- warnings: **${warnings:-0}**"
+    echo "- fail-on-severity: \`$FAIL_ON\`"
+  } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 fi
 
-# Non-gating path: run vaulter and pass through its exit code.
-exec vaulter "$@"
+rm -f "$err_file"
+exit "$status"
