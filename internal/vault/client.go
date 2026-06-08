@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package vault
 
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -36,10 +39,14 @@ type ClientConfig struct {
 }
 
 // Client wraps the Vault API client for recursive secret traversal.
+//
+// A Client is not safe for concurrent Walk calls: each Walk records the paths
+// it skipped (see SkippedPaths) on the Client.
 type Client struct {
-	api   *vaultapi.Client
-	mount string
-	kvVer int
+	api     *vaultapi.Client
+	mount   string
+	kvVer   int
+	skipped []string
 }
 
 // ValidateMountAndPrefix checks mount and prefix for path traversal.
@@ -107,19 +114,41 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	return &Client{api: api, mount: cfg.Mount, kvVer: cfg.KVVer}, nil
 }
 
-// Walk recursively lists all secrets under the given prefix and sends them to the channel.
+// Walk recursively lists all secrets under the given prefix and sends them to
+// the channel. Paths the supplied token is not permitted to list or read
+// (HTTP 403) are skipped rather than aborting the walk, so a token with partial
+// access still audits everything it can reach; the skipped paths are recorded
+// and available via SkippedPaths. Any other error aborts the walk.
 func (c *Client) Walk(ctx context.Context, prefix string, out chan<- Secret) error {
 	defer close(out)
+	c.skipped = nil
 	if err := ValidateMountAndPrefix("", prefix); err != nil {
 		return err
 	}
 	return c.walk(ctx, prefix, out)
 }
 
+// SkippedPaths returns the paths the most recent Walk skipped because the token
+// lacked permission (HTTP 403). It is valid to read after Walk returns.
+func (c *Client) SkippedPaths() []string { return c.skipped }
+
+// isPermissionDenied reports whether err is a Vault 403 (permission denied).
+func isPermissionDenied(err error) bool {
+	var re *vaultapi.ResponseError
+	if errors.As(err, &re) {
+		return re.StatusCode == http.StatusForbidden
+	}
+	return false
+}
+
 func (c *Client) walk(ctx context.Context, prefix string, out chan<- Secret) error {
 	listPath := c.listPath(prefix)
 	resp, err := c.api.Logical().ListWithContext(ctx, listPath)
 	if err != nil {
+		if isPermissionDenied(err) {
+			c.skipped = append(c.skipped, prefix)
+			return nil
+		}
 		return fmt.Errorf("listing %s: %w", listPath, err)
 	}
 	if resp == nil || resp.Data == nil {
@@ -144,6 +173,10 @@ func (c *Client) walk(ctx context.Context, prefix string, out chan<- Secret) err
 
 		secret, err := c.readSecret(ctx, fullPath)
 		if err != nil {
+			if isPermissionDenied(err) {
+				c.skipped = append(c.skipped, fullPath)
+				continue
+			}
 			return err
 		}
 		if secret != nil {

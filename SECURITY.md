@@ -40,9 +40,9 @@ generated HTML/Markdown reports) as sensitive material.
 
 Please report security issues **privately** — do not open a public issue.
 
-- Preferred: GitHub's private vulnerability reporting (Security → "Report a
-  vulnerability") once this repository is published.
-- Otherwise: email the maintainer at `rigoglioso.lukee@gmail.com`.
+- Use GitHub's private vulnerability reporting: the repository's **Security**
+  tab → **"Report a vulnerability"**. This opens a private advisory visible only
+  to the maintainers.
 
 Please include reproduction steps and the affected version. We aim to
 acknowledge reports within a few business days.

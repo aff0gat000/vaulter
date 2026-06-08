@@ -1,13 +1,18 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package cmd
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/aff0gat000/vaulter/pkg/vaulter"
 )
 
 func TestNewRootCmd_Flags(t *testing.T) {
@@ -292,6 +297,80 @@ func TestCmd_UnknownFormat(t *testing.T) {
 	cmd.SetErr(buf)
 	if err := cmd.Execute(); err == nil {
 		t.Error("expected error for unknown --format")
+	}
+}
+
+func TestGate(t *testing.T) {
+	findings := []vaulter.Finding{
+		{Severity: "error", Rule: "empty-value"},
+		{Severity: "warning", Rule: "config-like-key"},
+	}
+	tests := []struct {
+		failOn   string
+		findings []vaulter.Finding
+		wantGate bool
+		wantErr  bool // non-gate (invalid value) error
+	}{
+		{"none", findings, false, false},
+		{"", findings, false, false},
+		{"error", findings, true, false},
+		{"warning", findings, true, false},
+		{"error", []vaulter.Finding{{Severity: "warning"}}, false, false},
+		{"warning", []vaulter.Finding{{Severity: "warning"}}, true, false},
+		{"error", nil, false, false},
+		{"bogus", findings, false, true},
+	}
+	for _, tt := range tests {
+		err := gate(&Config{FailOn: tt.failOn}, tt.findings, len(tt.findings))
+		var ge *gateError
+		gotGate := errors.As(err, &ge)
+		if gotGate != tt.wantGate {
+			t.Errorf("gate(failOn=%q) gate=%v, want %v (err=%v)", tt.failOn, gotGate, tt.wantGate, err)
+		}
+		gotErr := err != nil && !gotGate
+		if gotErr != tt.wantErr {
+			t.Errorf("gate(failOn=%q) otherErr=%v, want %v (err=%v)", tt.failOn, gotErr, tt.wantErr, err)
+		}
+	}
+}
+
+func TestAuditCmd_JSONLowercaseSeverity(t *testing.T) {
+	srv := newMockVault()
+	defer srv.Close()
+	t.Setenv("VAULT_ADDR", srv.URL)
+	t.Setenv("VAULT_TOKEN", "test-token")
+
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"audit", "--insecure", "--json"})
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := cmd.Execute()
+	w.Close()
+	os.Stdout = oldStdout
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(r)
+	var result struct {
+		Findings []struct {
+			Severity string `json:"severity"`
+			Rule     string `json:"rule"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(result.Findings) == 0 {
+		t.Fatal("expected findings in JSON output")
+	}
+	for _, f := range result.Findings {
+		if f.Severity == "" || f.Rule == "" {
+			t.Errorf("expected lowercase severity/rule JSON keys, got %+v", f)
+		}
 	}
 }
 

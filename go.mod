@@ -1,6 +1,6 @@
 module github.com/aff0gat000/vaulter
 
-go 1.25.10
+go 1.25.11
 
 require (
 	github.com/hashicorp/vault/api v1.22.0

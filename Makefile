@@ -4,7 +4,7 @@ LDFLAGS := -ldflags "-X github.com/aff0gat000/vaulter/cmd.Version=$(VERSION)"
 .PHONY: build test cover integration integration-up integration-down lint clean docker docker-scan sast
 
 build:
-	go build $(LDFLAGS) -o vaulter .
+	go build -trimpath $(LDFLAGS) -o vaulter .
 
 test:
 	go test ./... -race -count=1

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package rules
 
 import (
@@ -5,13 +7,14 @@ import (
 	"strings"
 )
 
-// Finding describes a flagged issue in a vault secret.
+// Finding describes a flagged issue in a vault secret. JSON tags match the
+// lower-case convention used by Match so the CLI's JSON output is consistent.
 type Finding struct {
-	Path     string
-	Key      string
-	Value    string
-	Rule     string
-	Severity string // "warning" or "error"
+	Path     string `json:"path"`
+	Key      string `json:"key"`
+	Value    string `json:"value"`
+	Rule     string `json:"rule"`
+	Severity string `json:"severity"` // "warning" or "error"
 }
 
 // Rule checks a key-value pair and returns a finding description or empty string.
